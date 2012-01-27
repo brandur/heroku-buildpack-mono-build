@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+# fail fast
+set -e
+
+# if any command in a pipe fails, kill the script (useful for indent)
+set -o pipefail
+
+arrow() {
+  while read line; do
+    echo "-----> ${line}"
+  done
+}
+
+indent() {
+  while read line; do
+    echo "       ${line}"
+  done
+}
+
+# important directories: https://gist.github.com/fe7f04abbd9538b656c5
+BUILD_DIR=$1
+CACHE_DIR=$2
+
+echo "Checking environmental variables" | arrow
+
+if [ "$MONO_VERSION" == "" ]; then
+  echo "Error: \$MONO_VERSION needs to be set" | arrow
+  exit 1
+fi
+
+if [ "$XSP_VERSION" == "" ]; then
+  echo "Error: \$XSP_VERSION needs to be set" | arrow
+  exit 1
+fi
+
+if [ "$AWS_ACCOUNT_ID" == "" ]; then
+  echo "Warning: \$AWS_ACCOUNT_ID is not set" | indent
+fi
+
+if [ "$AWS_SECRET" == "" ]; then
+  echo "Warning: \$AWS_SECRET is not set" | indent
+fi
+
+if [ "$S3_BUCKET" == "" ]; then
+  echo "Warning: \$S3_BUCKET is not set" | indent
+fi
+
+# source locations
+MONO_SOURCE="http://download.mono-project.com/sources/mono/mono-${MONO_VERSION}.tar.gz"
+XSP_SOURCE="http://ftp.novell.com/pub/mono/sources/xsp/xsp-${XSP_VERSION}.tar.bz2"
+
+cd ${BUILD_DIR}
+
+PACKAGE_DIR="${BUILD_DIR}/package"
+mkdir -p "$PACKAGE_DIR"
+
+#
+# Mono ---
+#
+
+echo "Building Mono v${MONO_VERSION}" | arrow
+
+if [ ! -d "#{CACHE_DIR}/mono-${MONO_VERSION}" ]; then
+  echo "Fetching Mono source v${MONO_VERSION} @ ${MONO_SOURCE}" | indent
+  curl ${MONO_SOURCE} --silent --max-time 600 -o - | tar xzf - -C ${CACHE_DIR}
+fi
+cp -r "${CACHE_DIR}/mono-${MONO_VERSION}" .
+
+# Mono build steps
+echo "Starting compile" | indent
+pushd "mono-${MONO_VERSION}"
+./configure --prefix=/app/mono --sysconfdir=/app/mono --disable-moonlight --disable-nls | indent
+make | indent
+make install | indent
+popd
+
+# Remove build output for faster slug compilation
+rm -rf "mono-${MONO_VERSION}"
+
+echo "Packaging installation" | indent
+( cd /app ; tar zcf mono-${MONO_VERSION}.tgz mono/ )
+cp /app/mono-${MONO_VERSION}.tgz $PACKAGE_DIR/
+
+#
+# XSP ---
+#
+
+echo "Building XSP v${XSP_VERSION}" | arrow
+
+if [ ! -d "#{CACHE_DIR}/xsp-${XSP_VERSION}" ]; then
+  echo "Fetching XSP source v${XSP_VERSION} @ ${XSP_SOURCE}" | indent
+  curl ${XSP_SOURCE} --silent --max-time 600 -o - | tar xjf - -C ${CACHE_DIR}
+fi
+cp -r "${CACHE_DIR}/xsp-${XSP_VERSION}" .
+
+vulcan build -v -p /app/xsp -c "PATH=\"/app/mono/bin:$PATH\" PKG_CONFIG_PATH=\"/app/mono/lib/pkgconfig/:$PKG_CONFIG_PATH\" curl --silent --max-time 60 --location $MONO_PACKAGE | tar xz - -C /app && ./configure --prefix=/app/xsp --sysconfdir=/app/xsp && make && make install"
+
+# xsp build steps
+echo "Setting PATH" | indent
+export PATH="/app/mono/bin:$PATH"
+
+echo "Setting PKG_CONFIG_PATH" | indent
+export PKG_CONFIG_PATH="/app/mono/lib/pkgconfig/:$PKG_CONFIG_PATH"
+
+echo "Starting compile" | indent
+pushd "xsp-${XSP_VERSION}"
+./configure --prefix=/app/xsp --sysconfdir=/app/xsp | indent
+make | indent
+make install | indent
+popd
+
+# Remove build output for faster slug compilation
+rm -rf "xsp-${XSP_VERSION}"
+
+echo "Packaging installation" | indent
+( cd /app ; tar zcf xsp-${XSP_VERSION}.tgz xsp/ )
+cp /app/xsp-${XSP_VERSION}.tgz $PACKAGE_DIR/
+
+#
+# ---
+#
+
+echo "Mono is available at /app/package/mono-${MONO_VERSION}.tgz" | arrow
+echo "XSP is available at /app/package/xsp-${XSP_VERSION}.tgz" | arrow
+
+echo "Build SUCCESS" | arrow
