@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # bin/detect <build-dir>
 
-if [ -f "decoy.rb" ]; then
-  echo "Build decoy!" && exit 0
+if [ -f "$1/decoy.rb" ]; then
+  echo "Decoy" && exit 0
 else
   echo "no" && exit 1
 fi
