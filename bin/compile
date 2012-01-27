@@ -51,7 +51,11 @@ fi
 MONO_SOURCE="http://download.mono-project.com/sources/mono/mono-${MONO_VERSION}.tar.gz"
 XSP_SOURCE="http://ftp.novell.com/pub/mono/sources/xsp/xsp-${XSP_VERSION}.tar.bz2"
 
+# NOTE: the rest of this script assumes that we're in the build directory
 cd ${BUILD_DIR}
+
+# cache may not exist yet
+mkdir -p ${CACHE_DIR}
 
 PACKAGE_DIR="${BUILD_DIR}/package"
 mkdir -p "$PACKAGE_DIR"
